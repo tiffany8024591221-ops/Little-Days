@@ -1475,6 +1475,19 @@
     // =========================================================================
     // 5. 登機證造型卡片元件 (真實機票設計)
     // =========================================================================
+    const FLIGHT_DIRS = [
+      { id: 'outbound', label: '去程', icon: '🛫' },
+      { id: 'return', label: '回程', icon: '🛬' },
+      { id: 'transfer', label: '轉機/其他', icon: '🔁' },
+    ];
+    function getFlightDir(t) {
+      if (t.direction) return t.direction;
+      const title = t.title || '';
+      if (/回程/.test(title)) return 'return';
+      if (/去程/.test(title)) return 'outbound';
+      return '';
+    }
+
     function BoardingPassCard({ ticket, onOpenPreview, onEdit, onDelete, compact = false }) {
       return (
         <div className="rounded-[26px] bg-[#FFFDF9] border border-[#E8C3C9] shadow-2xs overflow-hidden relative">
@@ -1486,6 +1499,11 @@
               <span className="px-2 py-0.5 rounded-full bg-[#FFFDF9] text-[#9E4B58] text-[10px] font-black shrink-0">
                 {ticket.flightNo || 'FLIGHT'}
               </span>
+              {getFlightDir(ticket) && (
+                <span className="px-2 py-0.5 rounded-full bg-[#9E4B58] text-white text-[10px] font-black shrink-0">
+                  {(FLIGHT_DIRS.find((d) => d.id === getFlightDir(ticket)) || {}).label}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1 shrink-0">
               {onOpenPreview && (
@@ -4482,14 +4500,16 @@
       const tickets = trip.tickets || [];
 
       const filteredTickets = useMemo(() => {
-        if (filterKind === 'all') return tickets;
-        return tickets.filter((t) => t.kind === filterKind);
+        const base = filterKind === 'all' ? tickets : tickets.filter((t) => t.kind === filterKind);
+        const rank = (t) => (t.kind !== 'flight' ? 3 : { outbound: 0, return: 2 }[getFlightDir(t)] ?? 1);
+        return [...base].sort((a, b) => rank(a) - rank(b));
       }, [tickets, filterKind]);
 
       const handleOpenAdd = () => {
         setEditingTicket({
           id: '',
           kind: 'flight',
+          direction: 'outbound',
           title: '',
           airline: '',
           flightNo: '',
@@ -4530,7 +4550,7 @@
         const autoTitle =
           editingTicket.title.trim() ||
           (editingTicket.kind === 'flight'
-            ? `${editingTicket.airline || '航班'} ${editingTicket.flightNo || ''}`.trim()
+            ? `${editingTicket.airline || '航班'} ${(FLIGHT_DIRS.find((d) => d.id === editingTicket.direction) || {}).label || ''} ${editingTicket.flightNo || ''}`.replace(/\s+/g, ' ').trim()
             : '電子票券憑證');
 
         const finalObj = { ...editingTicket, title: autoTitle };
@@ -4718,6 +4738,37 @@
 
                 {editingTicket.kind === 'flight' ? (
                   <>
+                    <div>
+                      <label className="text-[11px] font-bold text-[#7D746B]">航程方向</label>
+                      <div className="grid grid-cols-3 gap-2 mt-1">
+                        {FLIGHT_DIRS.map((d) => {
+                          const active = (editingTicket.direction || '') === d.id;
+                          return (
+                            <button
+                              key={d.id}
+                              type="button"
+                              onClick={() => {
+                                if (editingTicket.direction === d.id) return;
+                                const next = { ...editingTicket, direction: d.id };
+                                const swap = (d.id === 'return' && editingTicket.direction !== 'return') || (d.id === 'outbound' && editingTicket.direction === 'return');
+                                if (swap && !editingTicket.id) {
+                                  next.fromCode = editingTicket.toCode;
+                                  next.fromName = editingTicket.toName;
+                                  next.toCode = editingTicket.fromCode;
+                                  next.toName = editingTicket.fromName;
+                                  next.date = d.id === 'return' ? (trip.endDate || editingTicket.date) : (trip.startDate || editingTicket.date);
+                                }
+                                setEditingTicket(next);
+                              }}
+                              className={`py-2 rounded-2xl text-xs font-black border transition active:scale-95 ${active ? 'bg-[#D67A88] text-white border-[#D67A88]' : 'bg-[#FBF8F3] text-[#7D746B] border-[#E6DFD3]'}`}
+                            >
+                              {d.icon} {d.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="text-[11px] font-bold text-[#7D746B]">航空公司</label>

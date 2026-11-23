@@ -2668,8 +2668,19 @@
       const lastStop = dayStops[dayStops.length - 1];
 
       const flightTickets = (trip.tickets || []).filter((t) => t.kind === 'flight');
-      const outboundFlight = flightTickets[0];
-      const inboundFlight = flightTickets[1] || flightTickets[0];
+      // 依「航程方向」決定顯示位置：去程 → 第一天、回程 → 最後一天
+      // 舊資料沒有方向時：多張機票以日期最早者視為去程、最晚者視為回程；只有一張視為去程
+      const flightsByTime = [...flightTickets].sort(
+        (a, b) => (a.date || '').localeCompare(b.date || '') || (a.depTime || '').localeCompare(b.depTime || '')
+      );
+      const resolveDir = (t) => {
+        const d = getFlightDir(t);
+        if (d) return d;
+        if (flightsByTime.length >= 2 && t === flightsByTime[flightsByTime.length - 1]) return 'return';
+        return 'outbound';
+      };
+      const outboundFlights = flightsByTime.filter((t) => resolveDir(t) === 'outbound');
+      const inboundFlights = flightsByTime.filter((t) => resolveDir(t) === 'return');
 
       const mapMarkers = useMemo(() => {
         return dayStops.map((s, idx) => ({
@@ -2852,13 +2863,14 @@
           )}
 
           {/* Day 1 頂部去程登機證卡片 */}
-          {isFirstDay && outboundFlight && (
+          {isFirstDay && outboundFlights.map((tkt) => (
             <BoardingPassCard
-              ticket={outboundFlight}
+              key={tkt.id}
+              ticket={tkt}
               compact={true}
               onOpenPreview={onOpenTicket}
             />
-          )}
+          ))}
 
           {/* 第一天：機場 → 第一站（導航按鈕樣式與一般景點完全一致） */}
           {isFirstDay && firstStop && (
@@ -3055,13 +3067,14 @@
           )}
 
           {/* 最後一天底部回程登機證卡片 */}
-          {isLastDay && inboundFlight && (
+          {isLastDay && inboundFlights.map((tkt) => (
             <BoardingPassCard
-              ticket={inboundFlight}
+              key={tkt.id}
+              ticket={tkt}
               compact={true}
               onOpenPreview={onOpenTicket}
             />
-          )}
+          ))}
 
           {/* 一鍵智慧排程 Modal */}
           {showSmartModal && (

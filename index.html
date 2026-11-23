@@ -15,41 +15,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
 
   <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
 
   <!-- Leaflet Map CSS & JS -->
-  <style>
-.leaflet-pane,.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile-container,.leaflet-zoom-box,.leaflet-image-layer,.leaflet-layer{position:absolute;left:0;top:0}
-.leaflet-container{overflow:hidden;position:relative;outline:0;-webkit-tap-highlight-color:transparent}
-.leaflet-container img.leaflet-tile,.leaflet-container img.leaflet-marker-icon{max-width:none!important;max-height:none!important}
-.leaflet-tile,.leaflet-marker-icon,.leaflet-marker-shadow{user-select:none;-webkit-user-drag:none}
-.leaflet-pane{z-index:400}.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}.leaflet-shadow-pane{z-index:500}.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}
-.leaflet-map-pane canvas{z-index:100}.leaflet-map-pane svg{z-index:200}
-.leaflet-overlay-pane svg{max-width:none!important;max-height:none!important}
-.leaflet-zoom-animated{transform-origin:0 0}
-.leaflet-interactive{cursor:pointer}.leaflet-grab{cursor:grab}.leaflet-dragging .leaflet-grab{cursor:move}
-.leaflet-control{position:relative;z-index:800;pointer-events:auto;float:left;clear:both}
-.leaflet-top,.leaflet-bottom{position:absolute;z-index:1000;pointer-events:none}
-.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}
-.leaflet-right .leaflet-control{float:right}
-.leaflet-top .leaflet-control{margin-top:10px}.leaflet-left .leaflet-control{margin-left:10px}.leaflet-right .leaflet-control{margin-right:10px}.leaflet-bottom .leaflet-control{margin-bottom:10px}
-.leaflet-bar{box-shadow:0 1px 5px rgba(0,0,0,.35);border-radius:4px}
-.leaflet-bar a{background:#fff;border-bottom:1px solid #ccc;width:26px;height:26px;line-height:26px;display:block;text-align:center;text-decoration:none;color:#000}
-.leaflet-container .leaflet-control-attribution{background:rgba(255,255,255,.7);margin:0;padding:0 5px;font-size:11px}
-.leaflet-popup{position:absolute;text-align:center;margin-bottom:20px}
-.leaflet-popup-content-wrapper{padding:1px;text-align:left;border-radius:12px;background:#fff;box-shadow:0 3px 14px rgba(0,0,0,.4)}
-.leaflet-popup-content{margin:13px 24px 13px 20px;line-height:1.3}
-.leaflet-popup-tip-container{width:40px;height:20px;position:absolute;left:50%;margin-left:-20px;overflow:hidden;pointer-events:none}
-.leaflet-popup-tip{width:17px;height:17px;padding:1px;margin:-10px auto 0;transform:rotate(45deg);background:#fff}
-.leaflet-popup-close-button{position:absolute;top:0;right:0;padding:4px 4px 0 0;width:18px;height:14px;text-align:center;text-decoration:none;color:#757575}
-.leaflet-fade-anim .leaflet-popup{opacity:1}
-</style>
-  <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <!-- React 18 & Babel Standalone -->
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.3.1/umd/react.production.min.js"></script>
-  <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.26.4/babel.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
     * {
@@ -1083,6 +1058,138 @@
       const nh = Math.floor(total / 60);
       const nm = total % 60;
       return `${String(nh).padStart(2, '0')}:${String(nm).padStart(2, '0')}`;
+    }
+
+
+    // ===== Google API 整合 (Places 搜尋 + Gemini 排程) =====
+    const GKEY_STORAGE = 'littleDays_googleKey';
+    const GEMINI_MODEL = 'gemini-flash-latest';
+    function getGoogleKey() {
+      try { return localStorage.getItem(GKEY_STORAGE) || ''; } catch { return ''; }
+    }
+    function saveGoogleKey(v) {
+      try { if (v) localStorage.setItem(GKEY_STORAGE, v); else localStorage.removeItem(GKEY_STORAGE); } catch {}
+    }
+
+    async function searchGooglePlaces(query, city, cityInfo, key) {
+      const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': key,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount',
+        },
+        body: JSON.stringify({
+          textQuery: `${query} ${city}`,
+          languageCode: 'zh-TW',
+          maxResultCount: 10,
+          locationBias: {
+            circle: { center: { latitude: cityInfo.lat, longitude: cityInfo.lng }, radius: 30000 },
+          },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err && err.error && err.error.message) || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      return data.places || [];
+    }
+
+    async function planDayWithGemini({ key, city, hotel, items, day }) {
+      const prompt =
+        `你是專業的旅遊行程規劃師。請為「${city}」的第 ${day} 天，安排下列地點的最佳參觀順序。\n` +
+        `出發點(飯店)：${hotel && hotel.name ? hotel.name : '無'}${hotel && hotel.lat ? ` (${hotel.lat}, ${hotel.lng})` : ''}\n` +
+        `請考量：地理動線順路、避免來回折返、一般營業時間、用餐時段(午餐約 12:00、晚餐約 18:00)、適合傍晚或夜間造訪的地點排後面。\n` +
+        `地點清單(JSON)：${JSON.stringify(items.map((i) => ({ id: i.id, name: i.name, category: i.category, lat: i.lat, lng: i.lng, duration: i.duration })))}\n` +
+        `請回傳 JSON：startTime 為第一站建議出發時間(HH:MM)；order 為依序排列的地點陣列，每個包含 id(必須沿用清單中的 id)與 duration(建議停留分鐘數，30~240)；summary 為一句繁體中文的排程說明。所有地點都必須出現一次。`;
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: 'OBJECT',
+              properties: {
+                startTime: { type: 'STRING' },
+                summary: { type: 'STRING' },
+                order: {
+                  type: 'ARRAY',
+                  items: {
+                    type: 'OBJECT',
+                    properties: { id: { type: 'STRING' }, duration: { type: 'INTEGER' } },
+                    required: ['id'],
+                  },
+                },
+              },
+              required: ['order'],
+            },
+          },
+        }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error((err && err.error && err.error.message) || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      const text = data.candidates && data.candidates[0] && data.candidates[0].content.parts.map((p) => p.text || '').join('');
+      const parsed = JSON.parse((text || '').replace(/```json|```/g, '').trim());
+      const byId = new Map(items.map((i) => [i.id, i]));
+      const used = new Set();
+      const ordered = [];
+      (parsed.order || []).forEach((o) => {
+        const base = byId.get(o.id);
+        if (!base || used.has(o.id)) return;
+        used.add(o.id);
+        const dur = Number.isFinite(o.duration) ? Math.min(240, Math.max(30, o.duration)) : base.duration;
+        ordered.push({ ...base, duration: dur });
+      });
+      items.forEach((i) => { if (!used.has(i.id)) ordered.push(i); });
+      const startTime = /^\d{2}:\d{2}$/.test(parsed.startTime || '') ? parsed.startTime : '09:30';
+      return { ordered, startTime, summary: parsed.summary || '' };
+    }
+
+    function GoogleKeyPanel({ showToast }) {
+      const [open, setOpen] = useState(false);
+      const [value, setValue] = useState(getGoogleKey());
+      const [saved, setSaved] = useState(!!getGoogleKey());
+      const handleSave = () => {
+        const v = value.trim();
+        saveGoogleKey(v);
+        setSaved(!!v);
+        setOpen(false);
+        showToast(v ? '✅ Google API Key 已儲存在這支裝置' : '已清除 Google API Key');
+      };
+      return (
+        <div className="rounded-2xl bg-[#FFFDF9] border border-[#E6DFD3] px-3.5 py-2.5">
+          <button type="button" onClick={() => setOpen(!open)} className="w-full flex items-center justify-between text-xs font-bold text-[#7D746B]">
+            <span>🔑 Google API Key：{saved ? '已設定（地點搜尋與 AI 排程已啟用）' : '未設定（使用免費備援）'}</span>
+            <span>{open ? '▲' : '▼'}</span>
+          </button>
+          {open && (
+            <div className="mt-2.5 space-y-2">
+              <input
+                type="password"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                placeholder="貼上你的 API Key (AIza...)"
+                className="w-full px-3 py-2 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs focus:outline-none focus:border-[#D67A88]"
+              />
+              <p className="text-[10px] leading-relaxed text-[#9A9086]">
+                需在 Google Cloud 啟用 Places API (New) 與 Generative Language API。金鑰只存在本機瀏覽器，請在 Google Cloud 將金鑰限制為你的網站網址。
+              </p>
+              <div className="flex gap-2">
+                <button type="button" onClick={handleSave} className="flex-1 py-2 rounded-full bg-[#D67A88] text-white text-xs font-black active:scale-95 transition">儲存</button>
+                {saved && (
+                  <button type="button" onClick={() => { setValue(''); saveGoogleKey(''); setSaved(false); setOpen(false); showToast('已清除 Google API Key'); }} className="px-4 py-2 rounded-full bg-[#F5F0E6] text-[#7D746B] text-xs font-bold">清除</button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
     }
 
     function calcDistanceKm(lat1, lng1, lat2, lng2) {
@@ -2389,6 +2496,7 @@
       const [showMap, setShowMap] = useState(true);
       const [showSmartModal, setShowSmartModal] = useState(false);
       const [selectedPocketIds, setSelectedPocketIds] = useState([]);
+      const [isPlanning, setIsPlanning] = useState(false);
 
       const dayStops = trip.itinerary[selectedDay] || [];
       const cityInfo = findCityInfo(trip, countriesDB);
@@ -2464,42 +2572,62 @@
         showToast('已從當日行程移除');
       };
 
-      const handleSmartOptimize = () => {
+      const handleSmartOptimize = async () => {
         const picked = trip.pocketPlaces.filter((p) => selectedPocketIds.includes(p.id));
         if (picked.length === 0) {
           showToast('請先勾選至少 1 個口袋景點');
           return;
         }
         const pool = [...dayStops, ...picked];
+        const applyResult = (sorted, msg) => {
+          const optimizedTimeline = recalculateTimeline(sorted);
+          updateTrip((t) => ({
+            ...t,
+            itinerary: { ...t.itinerary, [selectedDay]: optimizedTimeline },
+            pocketPlaces: t.pocketPlaces.filter((p) => !selectedPocketIds.includes(p.id)),
+          }));
+          setSelectedPocketIds([]);
+          setShowSmartModal(false);
+          showToast(msg);
+        };
+
+        const gKey = getGoogleKey();
+        if (gKey) {
+          setIsPlanning(true);
+          try {
+            const { ordered, startTime, summary } = await planDayWithGemini({
+              key: gKey, city: trip.city, hotel: trip.hotel, items: pool, day: selectedDay,
+            });
+            const withStart = ordered.map((it, i) => (i === 0 ? { ...it, startTime } : it));
+            applyResult(withStart, summary ? `🤖 ${summary}` : `🤖 已由 AI 排入 Day ${selectedDay}！`);
+            setIsPlanning(false);
+            return;
+          } catch (err) {
+            showToast(`AI 排程失敗（${err.message}），改用最短距離排序`);
+          }
+          setIsPlanning(false);
+        }
+
+        const rest = [...pool];
         const sorted = [];
         let currLat = trip.hotel?.lat || cityInfo.lat;
         let currLng = trip.hotel?.lng || cityInfo.lng;
-
-        while (pool.length > 0) {
+        while (rest.length > 0) {
           let bestIdx = 0;
           let bestDist = Infinity;
-          pool.forEach((item, i) => {
+          rest.forEach((item, i) => {
             const d = calcDistanceKm(currLat, currLng, item.lat, item.lng);
             if (d < bestDist) {
               bestDist = d;
               bestIdx = i;
             }
           });
-          const [chosen] = pool.splice(bestIdx, 1);
+          const [chosen] = rest.splice(bestIdx, 1);
           sorted.push({ ...chosen, startTime: sorted.length === 0 ? '09:30' : chosen.startTime });
           currLat = chosen.lat;
           currLng = chosen.lng;
         }
-
-        const optimizedTimeline = recalculateTimeline(sorted);
-        updateTrip((t) => ({
-          ...t,
-          itinerary: { ...t.itinerary, [selectedDay]: optimizedTimeline },
-          pocketPlaces: t.pocketPlaces.filter((p) => !selectedPocketIds.includes(p.id)),
-        }));
-        setSelectedPocketIds([]);
-        setShowSmartModal(false);
-        showToast(`已依最順路距離自動排入 Day ${selectedDay}！`);
+        applyResult(sorted, `已依最順路距離自動排入 Day ${selectedDay}！`);
       };
 
       const buildSearchNavUrl = (placeName) => {
@@ -2776,7 +2904,7 @@
                   <button onClick={() => setShowSmartModal(false)} className="w-7 h-7 rounded-full bg-[#F5F0E6] text-xs font-bold">✕</button>
                 </div>
                 <p className="text-xs text-[#7D746B]">
-                  勾選「待排口袋名單」中的景點，系統將以「{trip.hotel?.name}」為出發起點，自動計算最順路順序：
+                  勾選「待排口袋名單」中的景點，將以「{trip.hotel?.name}」為出發起點，{getGoogleKey() ? '由 Gemini AI 依動線、用餐時段與停留時間智慧排程：' : '自動計算最順路順序（到「探索」設定 Google API Key 可啟用 AI 排程）：'}
                 </p>
 
                 {trip.pocketPlaces.length === 0 ? (
@@ -2814,9 +2942,10 @@
 
                 <button
                   onClick={handleSmartOptimize}
-                  className="w-full py-2.5 rounded-full bg-[#D67A88] text-white text-xs font-black shadow-xs active:scale-95 transition"
+                  disabled={isPlanning}
+                  className="w-full py-2.5 rounded-full bg-[#D67A88] text-white text-xs font-black shadow-xs active:scale-95 transition disabled:opacity-60"
                 >
-                  計算最順路順序並排入 Day {selectedDay}
+                  {isPlanning ? '🤖 AI 規劃中...' : getGoogleKey() ? `🤖 AI 智慧排入 Day ${selectedDay}` : `計算最順路順序並排入 Day ${selectedDay}`}
                 </button>
               </div>
             </div>
@@ -3283,6 +3412,43 @@
         e.preventDefault();
         if (!searchQuery.trim()) return;
         setIsSearching(true);
+        const gKey = getGoogleKey();
+        if (gKey) {
+          try {
+            const places = await searchGooglePlaces(searchQuery.trim(), trip.city, cityInfo, gKey);
+            if (places.length > 0) {
+              const pick = (preferred) => (spotCategories.includes(preferred) ? preferred : spotCategories[0]);
+              const mapped = places.map((p, idx) => {
+                const types = (p.types || []).join(' ');
+                const cat = /restaurant|cafe|coffee|bakery|bar|food|meal|dessert|ice_cream/.test(types)
+                  ? pick('美食')
+                  : /shopping_mall|store|department_store|supermarket|market/.test(types)
+                  ? pick('購物')
+                  : pick('景點');
+                const ratingText = p.rating ? ` ⭐${p.rating}${p.userRatingCount ? ` (${p.userRatingCount})` : ''}` : '';
+                return {
+                  id: `gp-${p.id || idx}`,
+                  name: (p.displayName && p.displayName.text) || '未命名地點',
+                  category: cat,
+                  lat: p.location ? p.location.latitude : cityInfo.lat,
+                  lng: p.location ? p.location.longitude : cityInfo.lng,
+                  address: p.formattedAddress || '',
+                  duration: 60,
+                  note: `Google 地圖${ratingText}`,
+                  isOsm: true,
+                };
+              });
+              setOsmResults(mapped);
+              showToast(`找到 ${mapped.length} 個「${searchQuery}」相關地點！`);
+            } else {
+              showToast('Google 找不到相符地點，試試看其他關鍵字！');
+            }
+            setIsSearching(false);
+            return;
+          } catch (err) {
+            showToast(`Google 搜尋失敗（${err.message}），改用免費搜尋`);
+          }
+        }
         try {
           const queryWithCity = `${searchQuery.trim()} ${trip.city}`;
           const res = await fetch(
@@ -3343,6 +3509,7 @@
 
       return (
         <div className="space-y-3.5 animate-card">
+          <GoogleKeyPanel showToast={showToast} />
           <form onSubmit={handleSearchOSM} className="flex gap-1.5">
             <input
               type="text"

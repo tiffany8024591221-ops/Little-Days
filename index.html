@@ -111,7 +111,7 @@
       to { opacity: 1; transform: none; }
     }
     .animate-card {
-      animation: fadeSlideUp 0.26s ease-out forwards;
+      animation: fadeSlideUp 0.26s ease-out;
     }
     /* 登機證左右半圓缺口 */
     .boarding-notch-left {
@@ -4677,7 +4677,7 @@
           )}
 
           {/* 新增 / 編輯票券彈窗 */}
-          {showFormModal && editingTicket && (
+          {showFormModal && editingTicket && ReactDOM.createPortal(
             <div className="fixed inset-0 bg-[#4A443F]/45 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-4">
               <form
                 onSubmit={handleSaveTicket}
@@ -4898,7 +4898,7 @@
                 </button>
               </form>
             </div>
-          )}
+          , document.body)}
         </div>
       );
     }

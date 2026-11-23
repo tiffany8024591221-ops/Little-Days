@@ -27,6 +27,20 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
   <style>
+    /* iOS 的 time/date 欄位有固有寬度，會撐破 grid 並造成高度不一，統一處理 */
+    input[type="time"], input[type="date"] {
+      -webkit-appearance: none;
+      appearance: none;
+      min-width: 0;
+      max-width: 100%;
+      display: block;
+      text-align: left;
+    }
+    input[type="time"]::-webkit-date-and-time-value,
+    input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+    .tk-field { height: 2.5rem; min-width: 0; }
+  </style>
+  <style>
     * {
       box-sizing: border-box;
       -webkit-tap-highlight-color: transparent;
@@ -1192,6 +1206,90 @@
       );
     }
 
+
+    function recalcDayTimeline(list) {
+      if (list.length === 0) return [];
+      let cursor = list[0].startTime || '09:30';
+      return list.map((item, idx) => {
+        const transit = list[idx + 1] ? estimateTransitInfo(item, list[idx + 1]).mins : 15;
+        if (idx === 0) {
+          cursor = addMinutesToTime(item.startTime || '09:30', item.duration + transit);
+          return item;
+        }
+        const updated = { ...item, startTime: cursor };
+        cursor = addMinutesToTime(cursor, item.duration + transit);
+        return updated;
+      });
+    }
+
+    function EditSpotModal({ spot, where, isFirst, spotCategories, onClose, onSave, onDelete }) {
+      const [name, setName] = useState(spot.name || '');
+      const [category, setCategory] = useState(spot.category || spotCategories[0] || '景點');
+      const [startTime, setStartTime] = useState(spot.startTime || '10:00');
+      const [duration, setDuration] = useState(String(spot.duration || 60));
+      const [address, setAddress] = useState(spot.address || '');
+      const [note, setNote] = useState(spot.note || '');
+      const inputCls = 'w-full mt-1 px-3.5 py-2 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold';
+      const handleSubmit = (e) => {
+        e.preventDefault();
+        if (!name.trim()) return;
+        onSave({
+          name: name.trim(),
+          category,
+          startTime,
+          duration: Math.max(15, Number(duration) || 60),
+          address: address.trim(),
+          note: note.trim(),
+        });
+      };
+      return (
+        <div className="fixed inset-0 bg-[#4A443F]/45 backdrop-blur-xs z-50 flex items-end sm:items-center justify-center p-4">
+          <form onSubmit={handleSubmit} className="w-full max-w-md rounded-[30px] bg-[#FFFDF9] border border-[#E6DFD3] p-5 shadow-2xl space-y-3 animate-card max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <h3 className="text-base font-black text-[#4A443F]">✎ 編輯{where === 'pocket' ? '收藏景點' : '行程景點'}</h3>
+              <button type="button" onClick={onClose} className="w-7 h-7 rounded-full bg-[#F5F0E6] text-xs font-bold">✕</button>
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-[#7D746B]">名稱</label>
+              <input type="text" required value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[11px] font-bold text-[#7D746B]">分類</label>
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className={inputCls}>
+                  {spotCategories.map((c) => (<option key={c} value={c}>{c}</option>))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-[#7D746B]">停留(分鐘)</label>
+                <input type="number" min="15" step="15" value={duration} onChange={(e) => setDuration(e.target.value)} className={inputCls} />
+              </div>
+            </div>
+            {where === 'day' && isFirst && (
+              <div>
+                <label className="text-[11px] font-bold text-[#7D746B]">出發時間（第一站，後續自動順延）</label>
+                <input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className={inputCls} />
+              </div>
+            )}
+            <div>
+              <label className="text-[11px] font-bold text-[#7D746B]">地址</label>
+              <input type="text" value={address} onChange={(e) => setAddress(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[11px] font-bold text-[#7D746B]">備註</label>
+              <textarea rows="2" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls} />
+            </div>
+            <div className="flex gap-2 pt-1">
+              {onDelete && (
+                <button type="button" onClick={onDelete} className="px-4 py-2.5 rounded-full bg-[#F7DCE0]/70 text-[#9E4B58] text-xs font-black">🗑 刪除</button>
+              )}
+              <button type="submit" className="flex-1 py-2.5 rounded-full bg-[#D67A88] text-white text-xs font-black active:scale-95 transition">儲存修改</button>
+            </div>
+          </form>
+        </div>
+      );
+    }
+
     function calcDistanceKm(lat1, lng1, lat2, lng2) {
       if (!lat1 || !lng1 || !lat2 || !lng2) return 1.2;
       const R = 6371;
@@ -1564,6 +1662,7 @@
       const [showNewTripModal, setShowNewTripModal] = useState(false);
       const [showManualSpotModal, setShowManualSpotModal] = useState(false);
       const [manualSpotTarget, setManualSpotTarget] = useState('day');
+      const [editingSpot, setEditingSpot] = useState(null);
       const [showSettingsModal, setShowSettingsModal] = useState(false);
       const [activeTicketModal, setActiveTicketModal] = useState(null);
 
@@ -1683,6 +1782,32 @@
         const pct = currentTrip.budgetTWD > 0 ? Math.min(100, Math.round((spentTWD / currentTrip.budgetTWD) * 100)) : 0;
         return { spentTWD, pct };
       }, [currentTrip.expenses, currentTrip.budgetTWD]);
+
+      const handleSaveSpot = (patch) => {
+        if (!editingSpot) return;
+        const { spot, where, day } = editingSpot;
+        updateCurrentTrip((t) => {
+          if (where === 'pocket') {
+            return { ...t, pocketPlaces: t.pocketPlaces.map((p) => (p.id === spot.id ? { ...p, ...patch } : p)) };
+          }
+          const list = (t.itinerary[day] || []).map((p) => (p.id === spot.id ? { ...p, ...patch } : p));
+          return { ...t, itinerary: { ...t.itinerary, [day]: recalcDayTimeline(list) } };
+        });
+        setEditingSpot(null);
+        showToast('已儲存修改 ✨');
+      };
+
+      const handleDeleteSpot = (spot, where, day) => {
+        updateCurrentTrip((t) => {
+          if (where === 'pocket') {
+            return { ...t, pocketPlaces: t.pocketPlaces.filter((p) => p.id !== spot.id) };
+          }
+          const list = (t.itinerary[day] || []).filter((p) => p.id !== spot.id);
+          return { ...t, itinerary: { ...t.itinerary, [day]: recalcDayTimeline(list) } };
+        });
+        setEditingSpot(null);
+        showToast('已刪除');
+      };
 
       const handleAddSpotToTrip = (spotData, destinationType = 'day', targetDay = selectedDay) => {
         const cityInfo = findCityInfo(currentTrip, countriesDB);
@@ -2005,6 +2130,7 @@
                   setSelectedDay={setSelectedDay}
                   onOpenTicket={setActiveTicketModal}
                   onOpenTicketManager={() => setActiveTab('tickets')}
+                  onEditSpot={(spot, day) => setEditingSpot({ spot, where: 'day', day })}
                   onOpenManualSpot={() => {
                     setManualSpotTarget('day');
                     setShowManualSpotModal(true);
@@ -2035,6 +2161,7 @@
                   trip={currentTrip}
                   countriesDB={countriesDB}
                   onAddSpot={handleAddSpotToTrip}
+                  onEditSpot={(spot) => setEditingSpot({ spot, where: 'pocket', day: 0 })}
                   onOpenManualSpot={() => {
                     setManualSpotTarget('pocket');
                     setShowManualSpotModal(true);
@@ -2108,6 +2235,20 @@
                 countriesDB={countriesDB}
                 onClose={() => setShowNewTripModal(false)}
                 onCreate={handleCreateNewTrip}
+              />
+            )}
+
+            {/* 編輯景點 */}
+            {editingSpot && (
+              <EditSpotModal
+                key={editingSpot.spot.id}
+                spot={editingSpot.spot}
+                where={editingSpot.where}
+                isFirst={editingSpot.where === 'day' && (currentTrip.itinerary[editingSpot.day] || [])[0]?.id === editingSpot.spot.id}
+                spotCategories={appSettings.spotCategories}
+                onClose={() => setEditingSpot(null)}
+                onSave={handleSaveSpot}
+                onDelete={() => handleDeleteSpot(editingSpot.spot, editingSpot.where, editingSpot.day)}
               />
             )}
 
@@ -2491,6 +2632,7 @@
       onOpenTicket,
       onOpenTicketManager,
       onOpenManualSpot,
+      onEditSpot,
       showToast
     }) {
       const [showMap, setShowMap] = useState(true);
@@ -2769,6 +2911,12 @@
                             className="w-6 h-6 rounded-full bg-[#F5F0E6] text-[#6E655D] text-xs font-bold disabled:opacity-30"
                           >
                             ↓
+                          </button>
+                          <button
+                            onClick={() => onEditSpot && onEditSpot(stop, selectedDay)}
+                            className="w-6 h-6 rounded-full bg-[#F9EED7] text-[#8F6B29] text-xs font-bold"
+                          >
+                            ✎
                           </button>
                           <button
                             onClick={() => handleRemoveStop(stop.id)}
@@ -3399,10 +3547,11 @@
     // =========================================================================
     // 10. 分頁四：探索 (Explore)
     // =========================================================================
-    function ExploreView({ trip, countriesDB, onAddSpot, onOpenManualSpot, spotCategories, selectedDay, showToast }) {
+    function ExploreView({ trip, countriesDB, onAddSpot, onEditSpot, onOpenManualSpot, spotCategories, selectedDay, showToast }) {
       const [searchQuery, setSearchQuery] = useState('');
       const [isSearching, setIsSearching] = useState(false);
       const [osmResults, setOsmResults] = useState([]);
+      const [showPocketOnly, setShowPocketOnly] = useState(false);
       const [filterCat, setFilterCat] = useState('全部');
 
       const cityInfo = findCityInfo(trip, countriesDB);
@@ -3439,6 +3588,7 @@
                 };
               });
               setOsmResults(mapped);
+              setShowPocketOnly(false);
               showToast(`找到 ${mapped.length} 個「${searchQuery}」相關地點！`);
             } else {
               showToast('Google 找不到相符地點，試試看其他關鍵字！');
@@ -3479,6 +3629,7 @@
               };
             });
             setOsmResults(mapped);
+            setShowPocketOnly(false);
             showToast(`找到 ${mapped.length} 個「${searchQuery}」相關地點！`);
           } else {
             showToast('找不到相符地點，試試看其他關鍵字或手動新增！');
@@ -3491,10 +3642,10 @@
       };
 
       const displayPlaces = useMemo(() => {
-        const base = osmResults.length > 0 ? osmResults : trip.pocketPlaces;
+        const base = osmResults.length > 0 && !showPocketOnly ? osmResults : trip.pocketPlaces;
         if (filterCat === '全部') return base;
         return base.filter((p) => p.category === filterCat);
-      }, [osmResults, trip.pocketPlaces, filterCat]);
+      }, [osmResults, showPocketOnly, trip.pocketPlaces, filterCat]);
 
       const mapMarkers = useMemo(() => {
         return displayPlaces.map((p) => ({
@@ -3556,22 +3707,38 @@
             heightClass="h-44"
           />
 
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-black text-[#4A443F]">
-              {osmResults.length > 0 ? `🔍 「${searchQuery}」搜尋結果` : `📌 待排口袋名單 (${trip.pocketPlaces.length})`}
-            </span>
+          <div className="flex items-center gap-1.5 px-1">
             {osmResults.length > 0 && (
               <button
-                onClick={() => {
-                  setOsmResults([]);
-                  setSearchQuery('');
-                }}
-                className="text-[11px] font-bold text-[#9E4B58]"
+                onClick={() => setShowPocketOnly(false)}
+                className={`px-3 py-1.5 rounded-full text-[11px] font-black ${!showPocketOnly ? 'bg-[#D67A88] text-white' : 'bg-[#FFFDF9] text-[#8C8278] border border-[#E6DFD3]'}`}
               >
-                返回口袋名單
+                🔍 搜尋結果 ({osmResults.length})
+              </button>
+            )}
+            <button
+              onClick={() => setShowPocketOnly(true)}
+              className={`px-3 py-1.5 rounded-full text-[11px] font-black ${osmResults.length === 0 || showPocketOnly ? 'bg-[#D67A88] text-white' : 'bg-[#FFFDF9] text-[#8C8278] border border-[#E6DFD3]'}`}
+            >
+              📌 收藏口袋名單 ({trip.pocketPlaces.length})
+            </button>
+            {osmResults.length > 0 && (
+              <button
+                onClick={() => { setOsmResults([]); setSearchQuery(''); setShowPocketOnly(false); }}
+                className="ml-auto text-[11px] font-bold text-[#9E4B58]"
+              >
+                清除搜尋
               </button>
             )}
           </div>
+
+          {displayPlaces.length === 0 && (
+            <div className="p-5 rounded-2xl bg-[#FBF8F3] text-center text-xs text-[#9A9086]">
+              {osmResults.length > 0 && showPocketOnly || osmResults.length === 0
+                ? '收藏名單還是空的，搜尋地點後按「📌 存口袋」，或用上方「手動新增」建立！'
+                : '沒有符合此分類的地點'}
+            </div>
+          )}
 
           <div className="space-y-2.5">
             {displayPlaces.map((place) => {
@@ -3601,6 +3768,14 @@
                     >
                       ＋ 排入 Day {selectedDay}
                     </button>
+                    {!place.isOsm && (
+                      <button
+                        onClick={() => onEditSpot && onEditSpot(place)}
+                        className="py-1.5 px-3 rounded-full bg-[#F9EED7] text-[#8F6B29] text-xs font-bold active:scale-95 transition shrink-0"
+                      >
+                        ✎ 編輯
+                      </button>
+                    )}
                     {place.isOsm && (
                       <button
                         onClick={() => onAddSpot(place, 'pocket')}
@@ -4608,57 +4783,67 @@
                       />
                     </div>
 
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="text-[10px] font-bold text-[#7D746B]">起飛時間</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="min-w-0">
+                        <label className="text-[11px] font-bold text-[#7D746B]">起飛時間</label>
                         <input
                           type="time"
                           value={editingTicket.depTime || '08:30'}
                           onChange={(e) => setEditingTicket({ ...editingTicket, depTime: e.target.value })}
-                          className="w-full mt-1 px-2 py-1.5 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
+                          className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
                         />
                       </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-[#7D746B]">抵達時間</label>
+                      <div className="min-w-0">
+                        <label className="text-[11px] font-bold text-[#7D746B]">抵達時間</label>
                         <input
                           type="time"
                           value={editingTicket.arrTime || '12:30'}
                           onChange={(e) => setEditingTicket({ ...editingTicket, arrTime: e.target.value })}
-                          className="w-full mt-1 px-2 py-1.5 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-[10px] font-bold text-[#7D746B]">座位號碼</label>
-                        <input
-                          type="text"
-                          placeholder="14A"
-                          value={editingTicket.seat || ''}
-                          onChange={(e) => setEditingTicket({ ...editingTicket, seat: e.target.value })}
-                          className="w-full mt-1 px-2.5 py-1.5 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-black"
+                          className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
                         />
                       </div>
                     </div>
 
                     <div className="grid grid-cols-3 gap-2">
-                      <input
-                        type="text"
-                        placeholder="航廈 (T1)"
-                        value={editingTicket.terminal || ''}
-                        onChange={(e) => setEditingTicket({ ...editingTicket, terminal: e.target.value })}
-                        className="px-2.5 py-2 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs"
-                      />
-                      <input
-                        type="text"
-                        placeholder="登機門 (B6)"
-                        value={editingTicket.gate || ''}
-                        onChange={(e) => setEditingTicket({ ...editingTicket, gate: e.target.value })}
-                        className="px-2.5 py-2 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs"
-                      />
+                      <div className="min-w-0">
+                        <label className="text-[11px] font-bold text-[#7D746B]">座位號碼</label>
+                        <input
+                          type="text"
+                          placeholder="14A"
+                          value={editingTicket.seat || ''}
+                          onChange={(e) => setEditingTicket({ ...editingTicket, seat: e.target.value })}
+                          className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="text-[11px] font-bold text-[#7D746B]">航廈</label>
+                        <input
+                          type="text"
+                          placeholder="T1"
+                          value={editingTicket.terminal || ''}
+                          onChange={(e) => setEditingTicket({ ...editingTicket, terminal: e.target.value })}
+                          className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <label className="text-[11px] font-bold text-[#7D746B]">登機門</label>
+                        <input
+                          type="text"
+                          placeholder="B6"
+                          value={editingTicket.gate || ''}
+                          onChange={(e) => setEditingTicket({ ...editingTicket, gate: e.target.value })}
+                          className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0">
+                      <label className="text-[11px] font-bold text-[#7D746B]">出發日期</label>
                       <input
                         type="date"
                         value={editingTicket.date || trip.startDate}
                         onChange={(e) => setEditingTicket({ ...editingTicket, date: e.target.value })}
-                        className="px-2 py-2 rounded-xl bg-[#FBF8F3] border border-[#E6DFD3] text-[10px]"
+                        className="tk-field w-full mt-1 px-3 rounded-2xl bg-[#FBF8F3] border border-[#E6DFD3] text-xs font-bold"
                       />
                     </div>
                   </>
